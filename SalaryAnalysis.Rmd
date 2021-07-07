@@ -1,0 +1,204 @@
+---
+title: "106-2 大數據分析方法 作業一"
+output: github_document
+author: B0444102嚴信虹
+---
+
+搞不清楚各行各業的薪資差異嗎? 念研究所到底對第一份工作的薪資影響有多大? CP值高嗎? 透過分析**初任人員平均經常性薪資**- [開放資料連結](https://data.gov.tw/dataset/6647)，可初步了解台灣近幾年各行各業、各學歷的起薪。
+
+## 比較103年度和105年度大學畢業者的薪資資料
+
+### 資料匯入與處理
+```{r dataload,warning=FALSE}
+#載入package
+library(jsonlite)
+library(dplyr)
+
+#讀取資料
+Year103<-fromJSON("https://apiservice.mol.gov.tw/OdService/download/A17000000J-020066-wtF")
+Year104<-fromJSON("https://apiservice.mol.gov.tw/OdService/download/A17000000J-020066-5aV")
+Year105<-fromJSON("https://apiservice.mol.gov.tw/OdService/download/A17000000J-020066-45f")
+
+#表格合併
+Year103105<-inner_join(Year103,Year105,by="大職業別")
+
+#欄位名稱處理
+ColName<-colnames(Year103105)
+ColName<-gsub("-","",ColName)
+ColName<-gsub(".x","103",ColName)
+ColName<-gsub(".y","105",ColName)
+colnames(Year103105)<-ColName
+
+#資料清洗和字串轉數字
+Year103105$大學薪資103<-gsub("—","NA",Year103105$大學薪資103)
+Year103105$大學薪資105<-gsub("—","NA",Year103105$大學薪資105)
+Year103105$大學薪資103<-as.numeric(Year103105$大學薪資103)
+Year103105$大學薪資105<-as.numeric(Year103105$大學薪資105)
+```
+
+### 105年度薪資較103年度薪資高的職業有哪些? 
+```{r compare103105,warning=FALSE}
+compare103105<-Year103105%>%
+  mutate(compare103105=大學薪資105/大學薪資103)%>%
+  arrange(desc(compare103105))%>%
+  filter(compare103105>1)%>%
+  select("大職業別",compare103105)
+
+#顯示結果前10筆
+knitr::kable(head(compare103105,10))
+
+#文字說明：
+#職業總共140個類別
+#105年度薪資較103年度薪資高的職業類別有100個，約71.4%職業類別薪資為增加
+#薪資最高成長約11.9%，為「礦業及土石採取業」
+```
+
+
+
+### 提高超過5%的的職業有哪些? 
+```{r over5}
+over5<-compare103105%>%
+  filter(compare103105>1.05)
+
+#顯示結果前10筆
+knitr::kable(head(over5,10))
+
+#文字說明：
+#105年度薪資較103年度薪資高過5%的職業類別有34個
+```
+
+### 主要的職業種別是哪些種類呢?
+```{r mainType}
+over5Split<-strsplit(over5$大職業別,"-")
+mainType<-NULL
+for(i in 1:length(over5$大職業別)){
+  mainType<-c(mainType,over5Split[[i]][1])
+}
+
+#顯示結果
+knitr::kable(table(mainType))
+
+#文字說明：
+#在34個105年度薪資較103年度薪資高的職業類別中，「住宿及餐飲業」的比例最高，有5個
+#「其他服務業」和「運輸及倉儲業」其次，各有4個
+```
+
+## 男女同工不同酬現況分析
+
+男女同工不同酬一直是性別平等中很重要的問題，分析資料來源為103到105年度的大學畢業薪資。
+
+### 103到105年度的大學畢業薪資資料，哪些行業男生薪資比女生薪資多?
+```{r male,warning=FALSE}
+#表格合併
+Year103104105<-rbind(Year103,Year104,Year105)
+
+#欄位名稱處理
+ColName<-colnames(Year103104105)
+ColName<-gsub("-","",ColName)
+colnames(Year103104105)<-ColName
+
+#資料清洗和字串轉數字
+Year103104105$`大學女/男`<-gsub("—","NA",Year103104105$`大學女/男`)
+Year103104105$`大學女/男`<-gsub("…","NA",Year103104105$`大學女/男`)
+Year103104105$`大學女/男`<-as.numeric(Year103104105$`大學女/男`)
+
+male<-Year103104105%>%
+  filter(`大學女/男`<100)%>%
+  arrange(`大學女/男`)%>%
+  select("年度","大職業別","大學女/男")
+
+#顯示結果前10筆
+knitr::kable(head(male,10))
+
+#文字說明：
+#103年度到105年度，共420個觀察值
+#420個觀察值中，男生薪資高於女生薪資的有338個(職業類別相同但年度不同也算1個)
+#差距最多的為2014年的「礦業及土石採取業」，女生薪資只有男生薪資的84.97%，少了約15.03%
+#在排名前10名中，「礦業及土石採取業」就出現了4個，猜測為該行業需要較多勞力
+
+#不重複職業類別
+male%>%
+  summarise(professionNumber=n_distinct(大職業別))
+
+#文字說明：
+#前面420個觀察值中，男生薪資高於女生薪資的有338個，其中職業類別相同但年度不同也算1個
+#為了計算不重複的職業類別，使用summarise函數的n_distinct來計算
+#結果為140個職業類別中，有118個職業類別在這3年內出現男生薪資高於女生薪資的情況
+```
+
+### 哪些行業女生薪資比男生薪資多? 
+```{r female}
+female<-Year103104105%>%
+  filter(`大學女/男`>100)%>%
+  arrange(desc(`大學女/男`))%>%
+  select("年度","大職業別","大學女/男")
+
+#顯示結果前10筆
+knitr::kable(head(female,10))
+
+#文字說明：
+#420個觀察值中，女生薪資高於男生薪資的只有2個
+#分別為2015年的「專業、科學及技術服務業」和2016年的「金融及保險業」
+#女生薪資最多只高於男生薪資0.26%
+#由以上兩者的結果發現，男女同工不同酬的現象還是有的
+```
+
+
+## 研究所薪資差異
+
+以105年度的資料來看，哪個職業別念研究所最划算呢 (研究所學歷薪資與大學學歷薪資增加比例最多)?
+ 
+```{r grad,warning=FALSE}
+#欄位名稱處理
+ColName<-colnames(Year105)
+ColName<-gsub("-","",ColName)
+colnames(Year105)<-ColName
+
+#資料清洗和字串轉數字
+Year105$大學薪資<-gsub("—","NA",Year105$大學薪資)
+Year105$研究所及以上薪資<-gsub("—","NA",Year105$研究所及以上薪資)
+Year105$大學薪資<-as.numeric(Year105$大學薪資)
+Year105$研究所及以上薪資<-as.numeric(Year105$研究所及以上薪資)
+
+grad<-Year105%>%
+  mutate(compareGrad=研究所及以上薪資/大學薪資)%>%
+  arrange(desc(compareGrad))%>%
+  select("大職業別",compareGrad)
+
+#顯示結果前10筆
+knitr::kable(head(grad,10))
+
+#文字說明：
+#總共140個職業類別，計算結果非NA的有80個
+#讀研究所薪資增加最多的為「專業、科學及技術服務業」，增加約24.63%
+```
+
+## 我有興趣的職業別薪資狀況分析
+
+### 有興趣的職業別篩選，呈現薪資
+```{r like}
+like<-Year105%>%
+  mutate(compareGrad=研究所及以上薪資/大學薪資)%>%
+  arrange(desc(compareGrad))%>%
+  select("大職業別","大學薪資","研究所及以上薪資",compareGrad)%>%
+  filter(大職業別=="資訊及通訊傳播業")
+
+#顯示結果
+knitr::kable(like)
+
+#文字說明：
+#有興趣的職業：資訊及通訊傳播業
+#大學薪資：28634，研究所級以上薪資：34286
+#薪資與想像中的差不多
+```
+
+### 這些職業別研究所薪資與大學薪資差多少呢？
+```{r likeGrad}
+#顯示結果
+knitr::kable(like)
+
+#文字說明：
+#研究所較大學薪資多了約19.74%
+#以前聽老師們說讀研究所的投資報酬率不錯，所以本來就有想念
+```
+
